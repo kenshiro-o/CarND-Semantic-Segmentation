@@ -69,12 +69,12 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes, training
 
     pool3_1x1 = tf.layers.conv2d(vgg_layer3_out, num_classes, 1, padding="SAME", 
                                  kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))                                
+    
+    
+    # pool3_1x1_bn = tf.layers.batch_normalization(pool3_1x1, training=training)                                 
     # pool4_1x1_bn = tf.layers.batch_normalization(pool4_1x1, training=training)                                 
 
-    # Building skip layers
-    # pool4_pred = tf.layers.conv2d(vgg_layer4_out, num_classes, 1, padding="SAME")
 
-    # pool3_pred = tf.layers.conv2d(vgg_layer3_out, num_classes, 1, padding="SAME")
 
 
     tr_conv_fc8_1x1_2x = tf.layers.conv2d_transpose(fc8_1x1, num_classes, 4, strides=2, padding="SAME",
@@ -88,6 +88,8 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes, training
 
     intermediate_fcn16x = tf.layers.conv2d_transpose(pool4_1x_add_tr_conv_fc8_1x1_2x, num_classes, 4, strides=2, padding="SAME",
                                                      kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+
+    # intermediate_fcn16x_bn = tf.layers.batch_normalization(intermediate_fcn16x, training=training)                                                                                     
 
     pool3_1x1_add_intermedia_fcn16x = tf.add(pool3_1x1, intermediate_fcn16x)                                                     
 
@@ -163,6 +165,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
         for X_train, Y_train in batch:
             fdict = {input_image: X_train, correct_label: Y_train, keep_prob: dropout_keep_value, learning_rate: learning_rate_value}
             if train_phase is not None:
+                print("****************************************************************************")
                 fdict[train_phase] = True
             
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict=fdict)
@@ -222,8 +225,8 @@ def run():
 
         
         # Train
-        train_nn(sess, 75, 30, get_batches_fn, train_ops, ce_loss, input_image, y, keep_prob, l_rate, 
-                 dropout_keep_value=0.75, train_phase=is_training, learning_rate_value=0.001)
+        train_nn(sess, 50, 30, get_batches_fn, train_ops, ce_loss, input_image, y, keep_prob, l_rate, 
+                 dropout_keep_value=0.5, train_phase=is_training, learning_rate_value=0.001)
 
         # TODO: Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
