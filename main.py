@@ -60,12 +60,16 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes, training
     fc8_1x1 = tf.layers.conv2d(vgg_layer7_out, num_classes, 1, padding="SAME", 
                                kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
     
-    fc8_1x1_bn = tf.layers.batch_normalization(fc8_1x1, training=training)
+    # fc8_1x1_bn = tf.layers.batch_normalization(fc8_1x1, training=training)
 
 
     pool4_1x1 = tf.layers.conv2d(vgg_layer4_out, num_classes, 1, padding="SAME", 
                                  kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
-    pool4_1x1_bn = tf.layers.batch_normalization(pool4_1x1, training=training)                                 
+
+
+    pool3_1x1 = tf.layers.conv2d(vgg_layer3_out, num_classes, 1, padding="SAME", 
+                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))                                
+    # pool4_1x1_bn = tf.layers.batch_normalization(pool4_1x1, training=training)                                 
 
     # Building skip layers
     # pool4_pred = tf.layers.conv2d(vgg_layer4_out, num_classes, 1, padding="SAME")
@@ -73,16 +77,24 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes, training
     # pool3_pred = tf.layers.conv2d(vgg_layer3_out, num_classes, 1, padding="SAME")
 
 
-    tr_conv_fc8_1x1_2x = tf.layers.conv2d_transpose(fc8_1x1_bn, num_classes, 4, strides=2, padding="SAME",
+    tr_conv_fc8_1x1_2x = tf.layers.conv2d_transpose(fc8_1x1, num_classes, 4, strides=2, padding="SAME",
                                                     kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
-    tr_conv_fc8_1x1_2x_bn = tf.layers.batch_normalization(tr_conv_fc8_1x1_2x, training=training)
+    # tr_conv_fc8_1x1_2x_bn = tf.layers.batch_normalization(tr_conv_fc8_1x1_2x, training=training)
 
-    pool4_1x_add_tr_conv_fc8_1x1_2x = tf.add(pool4_1x1_bn, tr_conv_fc8_1x1_2x_bn)
+    pool4_1x_add_tr_conv_fc8_1x1_2x = tf.add(pool4_1x1, tr_conv_fc8_1x1_2x)
     
-    fcn_16x_final = tf.layers.conv2d_transpose(pool4_1x_add_tr_conv_fc8_1x1_2x, num_classes, 4, strides=16, padding="SAME",
-                                               kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+    # fcn_16x_final = tf.layers.conv2d_transpose(pool4_1x_add_tr_conv_fc8_1x1_2x, num_classes, 4, strides=16, padding="SAME",
+    #                                            kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+
+    intermediate_fcn16x = tf.layers.conv2d_transpose(pool4_1x_add_tr_conv_fc8_1x1_2x, num_classes, 4, strides=2, padding="SAME",
+                                                     kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+
+    pool3_1x1_add_intermedia_fcn16x = tf.add(pool3_1x1, intermediate_fcn16x)                                                     
+
+    fcn8x_final = tf.layers.conv2d_transpose(pool3_1x1_add_intermedia_fcn16x, num_classes, 16, strides=8, padding="SAME",
+                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
     
-    return fcn_16x_final
+    return fcn8x_final
 tests.test_layers(layers)
 
 
@@ -95,18 +107,16 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :param num_classes: Number of classes to classify
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """    
-    extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    
-    with tf.control_dependencies(extra_update_ops):
-        logits = tf.reshape(nn_last_layer, (-1, num_classes))
-        correct_label = tf.reshape(correct_label, (-1, num_classes))
 
-        beta = 0.001
-        regularizer_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
-        cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=correct_label))
-        final_loss = tf.reduce_mean(cross_entropy_loss + sum(regularizer_losses) * beta)
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.0001)
-        training_operation = optimizer.minimize(final_loss)
+    logits = tf.reshape(nn_last_layer, (-1, num_classes))
+    correct_label = tf.reshape(correct_label, (-1, num_classes))
+
+    beta = 0.001
+    regularizer_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=correct_label))
+    final_loss = tf.reduce_mean(cross_entropy_loss + sum(regularizer_losses) * beta)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    training_operation = optimizer.minimize(final_loss)
 
 
 
@@ -127,7 +137,7 @@ def evaluate(sess, input_image, correct_label, keep_prob, X_train, Y_train, loss
 
 
 def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             correct_label, keep_prob, learning_rate, dropout_keep_value=1.0, train_phase=None):
+             correct_label, keep_prob, learning_rate, dropout_keep_value=1.0, train_phase=None, learning_rate_value=0.0001):
     """
     Train neural network and print out the loss during training.
     :param sess: TF Session
@@ -147,16 +157,24 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     sess.run(tf.global_variables_initializer())
 
     for i in  tqdm(range(epochs)):
+        total_loss = 0.0
+        num_images = 0
         batch = get_batches_fn(batch_size)
         for X_train, Y_train in batch:
-            fdict = {input_image: X_train, correct_label: Y_train, keep_prob: dropout_keep_value}
+            fdict = {input_image: X_train, correct_label: Y_train, keep_prob: dropout_keep_value, learning_rate: learning_rate_value}
             if train_phase is not None:
                 fdict[train_phase] = True
             
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict=fdict)
+            
+            batch_size = len(X_train)
+            num_images += batch_size
+            total_loss += loss * batch_size
             print("[EPOCH {}] Final loss on batch = {}".format(i, loss))
-            # batch_size = len(X_train)
+            
             # evaluate(sess, input_image, correct_label, keep_prob, X_train, Y_train, cross_entropy_loss, batch_size, learning_rate)
+        avg_loss = total_loss / num_images            
+        print("***** EPOCH {}: Average loss = {} *****".format(i, avg_loss))
 
 tests.test_train_nn(train_nn)
 
@@ -185,7 +203,7 @@ def run():
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
 
         # TODO: Build NN using load_vgg, layers, and optimize function
-        input_image, keep_prob, layer3_out, layer4_out,  layer7_out = load_vgg(sess, vgg_path)
+        input_image, keep_prob, layer3_out, layer4_out,  layer7_out = load_vgg(sess, vgg_path)        
 
         is_training = tf.placeholder(tf.bool, name="is_training")
         
@@ -198,14 +216,14 @@ def run():
 
 
         # Create placeholders for output
-        y = tf.placeholder(tf.int32, (None, image_shape[0], image_shape[1], 2))
-        logits, train_ops, ce_loss = optimize(last_layer, y, 0.001, num_classes)
+        y = tf.placeholder(tf.int32, shape=[None, None, None, num_classes])
+        l_rate = tf.placeholder(tf.float32, name="learning_rate")
+        logits, train_ops, ce_loss = optimize(last_layer, y, l_rate, num_classes)
 
         
-
         # Train
-        train_nn(sess, 15, 30, get_batches_fn, train_ops, ce_loss, input_image, y, keep_prob, 0.001, 
-                 dropout_keep_value=0.5, train_phase=is_training)
+        train_nn(sess, 75, 30, get_batches_fn, train_ops, ce_loss, input_image, y, keep_prob, l_rate, 
+                 dropout_keep_value=0.75, train_phase=is_training, learning_rate_value=0.001)
 
         # TODO: Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
