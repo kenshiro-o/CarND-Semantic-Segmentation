@@ -25,8 +25,7 @@ def load_vgg(sess, vgg_path):
     :param sess: TensorFlow Session
     :param vgg_path: Path to vgg folder, containing "variables/" and "saved_model.pb"
     :return: Tuple of Tensors from VGG model (image_input, keep_prob, layer3_out, layer4_out, layer7_out)
-    """
-    # TODO: Implement function
+    """    
     #   Use tf.saved_model.loader.load to load the model and weights    
     vgg_tag = 'vgg16'
     vgg_input_tensor_name = 'image_input:0'
@@ -75,8 +74,6 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes, training
     # pool4_1x1_bn = tf.layers.batch_normalization(pool4_1x1, training=training)                                 
 
 
-
-
     tr_conv_fc8_1x1_2x = tf.layers.conv2d_transpose(fc8_1x1, num_classes, 4, strides=2, padding="SAME",
                                                     kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
     # tr_conv_fc8_1x1_2x_bn = tf.layers.batch_normalization(tr_conv_fc8_1x1_2x, training=training)
@@ -116,26 +113,16 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     beta = 0.001
     regularizer_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
     cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=correct_label))
+    
+    # Don't forget to add the L2 loss to our cross entropy loss
     final_loss = tf.reduce_mean(cross_entropy_loss + sum(regularizer_losses) * beta)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     training_operation = optimizer.minimize(final_loss)
 
-
-
-    # TODO: Implement function
+    
     return logits, training_operation, final_loss
 tests.test_optimize(optimize)
 
-
-def evaluate(sess, input_image, correct_label, keep_prob, X_train, Y_train, loss_op, batch_size, learning_rate):
-    """
-    Evaluates the model's accuracy and loss for the supplied dataset.
-    Naturally, Dropout is ignored in this case (i.e. we set dropout_keep_pct to 1.0)
-    """    
-    
-    # loss = sess.run(loss_op, feed_dict={input_image: X_train, correct_label: Y_train, keep_prob: 1.0, is_training=False})    
-    # print("Final loss on batch = {}".format(loss))
-    pass
 
 
 def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
@@ -152,9 +139,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param correct_label: TF Placeholder for label images
     :param keep_prob: TF Placeholder for dropout keep probability
     :param learning_rate: TF Placeholder for learning rate
-    """
-    # TODO: Implement function
-        
+    """        
     # Never forget to initialise variables
     sess.run(tf.global_variables_initializer())
 
@@ -164,18 +149,17 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
         batch = get_batches_fn(batch_size)
         for X_train, Y_train in batch:
             fdict = {input_image: X_train, correct_label: Y_train, keep_prob: dropout_keep_value, learning_rate: learning_rate_value}
-            if train_phase is not None:
-                print("****************************************************************************")
+            if train_phase is not None:                
                 fdict[train_phase] = True
             
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict=fdict)
             
+            # Compute weighted loss per batch
             batch_size = len(X_train)
             num_images += batch_size
             total_loss += loss * batch_size
             print("[EPOCH {}] Final loss on batch = {}".format(i, loss))
-            
-            # evaluate(sess, input_image, correct_label, keep_prob, X_train, Y_train, cross_entropy_loss, batch_size, learning_rate)
+                        
         avg_loss = total_loss / num_images            
         print("***** EPOCH {}: Average loss = {} *****".format(i, avg_loss))
 
@@ -213,11 +197,9 @@ def run():
         last_layer = layers(layer3_out, layer4_out, layer7_out, num_classes, training=is_training)
 
         for v in tf.trainable_variables():
+            # Print the trainable vbariables of the network
             print(v)        
-
-        # TODO: Train NN using the train_nn function
-
-
+        
         # Create placeholders for output
         y = tf.placeholder(tf.int32, shape=[None, None, None, num_classes])
         l_rate = tf.placeholder(tf.float32, name="learning_rate")
@@ -225,8 +207,8 @@ def run():
 
         
         # Train
-        train_nn(sess, 50, 30, get_batches_fn, train_ops, ce_loss, input_image, y, keep_prob, l_rate, 
-                 dropout_keep_value=0.5, train_phase=is_training, learning_rate_value=0.001)
+        train_nn(sess, 75, 30, get_batches_fn, train_ops, ce_loss, input_image, y, keep_prob, l_rate, 
+                 dropout_keep_value=0.65, train_phase=is_training, learning_rate_value=0.001)
 
         # TODO: Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
